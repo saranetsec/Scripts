@@ -1,0 +1,64 @@
+﻿# NSX-T Manager API details 
+$nsxServer = "https://172.20.10.41" 
+
+$username = "admin" 
+
+$password = "VMware1!VMware1!" 
+
+#$creds= Get-Credential
+
+$skipcertcheck = $true
+
+
+
+# Encode credentials for Basic Auth 
+
+$encodedAuth = [Convert]::ToBase64String([Text.Encoding]::ASCII.GetBytes("$($username):$($password)")) 
+
+$header = @{Authorization = "Basic $encodedAuth"}
+
+# Load the CSV file 
+$vmtaglist = Import-Csv -Path "C:\Users\administrator.VCLASS\NSX_Inventory_VM_ObjID.csv"
+
+foreach ($tag in $vmtaglist) {
+
+#Extract tag details from CSV
+
+$vmname = $tag.VMName
+$objectType ="VirtualMachine"
+$objectId = $tag.External_ID
+$scope = "General"
+$tagValue = $tag.TagName
+
+# Define API endpoint and tag structure for the POST request 
+
+$uri = "$nsxServer/policy/api/v1/fabric/virtual-machines?action=add_tags" 
+
+$body = @{ 
+
+external_id = $objectId
+tags = @( 
+
+@{ 
+
+scope = $scope 
+
+tag = $tagValue 
+
+} 
+
+) 
+
+} | ConvertTo-Json -Depth 5
+# Send the API request 
+
+try { 
+
+$response = Invoke-RestMethod -Uri $uri -Method Post -Body $body -ContentType "application/json" -Headers $header
+
+            Write-Output "Tag '$tagValue' applied to '$vmname' with ID $objectId under scope $scope." 
+
+                } catch { 
+
+                    Write-Output "Failed to apply tag '$tagValue' to '$vmname' with ID $objectId $_" } 
+}

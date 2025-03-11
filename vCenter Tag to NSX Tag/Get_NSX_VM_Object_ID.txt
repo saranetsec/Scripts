@@ -1,0 +1,52 @@
+﻿
+
+# NSX-T Manager API details 
+$nsxServer = "https://172.20.10.41" 
+
+$username = "admin" 
+
+$password = "VMware1!VMware1!" 
+
+#$creds= Get-Credential
+
+$skipcertcheck = $true
+
+
+
+# Encode credentials for Basic Auth 
+
+$encodedAuth = [Convert]::ToBase64String([Text.Encoding]::ASCII.GetBytes("$($username):$($password)")) 
+
+$header = @{Authorization = "Basic $encodedAuth"}
+
+
+#Array to hold VM External ID
+$vmexrnalid =@()
+$vmexgternalidobj = @()
+# Load the CSV file 
+$vmlist = Import-Csv -Path "C:\Users\administrator.VCLASS\vCener_TagAssignment.csv" 
+
+foreach ($vm in $vmlist) {
+ $vmname = $vm.VMName
+
+$uri = "$nsxServer/policy/api/v1/fabric/virtual-machines?display_name=$vmname" 
+
+$response = Invoke-RestMethod -Uri $uri -Method Get -Headers $header
+#Write-Host "$($response.results.display_name) - $($response.results.external_id)"
+#$response.results.external_id
+
+$vmexgternalidobj = [PSCustomObject]@{
+
+VMName= $vm.VMName
+
+TagName= $vm.TagName
+
+External_ID= $response.results.external_id
+
+} 
+
+$vmexrnalid += $vmexgternalidobj
+
+}
+
+$vmexrnalid | Export-Csv "NSX_Inventory_VM_ObjID.csv" -Encoding utf8 -NoTypeInformation

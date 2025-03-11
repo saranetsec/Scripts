@@ -1,0 +1,157 @@
+﻿# Import PowerCLI module 
+
+Import-Module VMware.VimAutomation.Core
+
+
+
+# Disable Proxy 
+
+Set-PowerCLIConfiguration -ProxyPolicy NoProxy -confirm:$false
+
+
+#To accept all TLS versions, if getting SSL/TLS version mismatch error
+
+[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls,[Net.SecurityProtocolType]::Tls11,[Net.SecurityProtocolType]::Tls12
+
+# Disable SSL_TSL Certificate Check
+. "C:\Users\administrator.vclass\Disable_SSL_TLS.ps1"
+
+# Ignore InvalidCertificate 
+
+Set-PowerCLIConfiguration -DisplayDeprecationWarnings $false -InvalidCertificateAction ignore -confirm:$false
+
+#Background Color
+function Green
+
+{
+
+    process { Write-Host $_ -ForegroundColor Green }
+
+    }
+
+
+
+    function Red
+
+    {
+
+        process { Write-Host $_ -ForegroundColor Red }
+
+        }
+
+$xmlfilepathnsx = "C:\Users\Administrator.vclass\nsx-cred.xml"
+
+if (Test-Path -Path $xmlfilepathnsx) {
+ Write-Host "The Credential XML file exists"
+$nsxcred = Import-Clixml -Path "C:\Users\Administrator.vclass\nsx-cred.xml" 
+}
+else {
+Write-Host "The Credential XML file doesn't exists"
+$nsxcred = Get-Credential
+$nsxcred| Export-Clixml -Path "C:\Users\Administrator.vclass\nsx-cred.xml"
+}
+
+# NSX-T Manager API details 
+$nsxServer = "https://172.20.10.41" 
+
+#$username = "admin" 
+
+#$password = "VMware1!VMware1!" 
+
+#$skipcertcheck = $true
+
+
+# Encode credentials for Basic Auth 
+
+#$encodedAuth =   [Convert]::ToBase64String([Text.Encoding]::ASCII.GetBytes("$($username):$($password)")) 
+$encodedAuth =  [Convert]::ToBase64String([Text.Encoding]::ASCII.GetBytes(("{0}:{1}" -f $nsxcred.UserName, $nsxcred.GetNetworkCredential().Password))) 
+#$header = @{Authorization = "Basic" + $encodedAuth
+#"Content-Type" = "application/json"
+#}
+$header = @{Authorization = "Basic $encodedAuth"
+ "Content-Type" = "application/json"
+}
+
+
+#Array to hold VM External ID
+$vmexrnalid =@()
+$vmexgternalidobj = @()
+# Load the CSV file 
+$vmlist = Import-Csv -Path "C:\Users\administrator.VCLASS\vCener_TagAssignment.csv" 
+
+foreach ($vm in $vmlist) {
+ $vmname = $vm.VMName
+$tagValue = $vm.TagName
+$uri = "$nsxServer/policy/api/v1/fabric/virtual-machines?display_name=$vmname" 
+
+try {
+$response = Invoke-RestMethod -Uri $uri -Method Get -Headers $header
+#$response = Invoke-WebRequest -Uri $uri -Method Get -Headers $header
+$response.Results.Count
+                   # Write-Host "StatusCode:" $_.Exception.Response.StatusCode.value__
+} catch { 
+
+ throw $_
+                   # Write-Host "StatusCode:" $_.Exception.Response.StatusCode.value__
+                    }
+#$response.results
+#Write-Host "$($response.results.display_name) - $($response.results.external_id)"
+#$response.results.external_id
+
+$objectType ="VirtualMachine"
+$scope = "General"
+
+$vmexgternalidobj = [PSCustomObject]@{
+
+VMName= $vm.VMName
+
+TagName= $vm.TagName
+
+External_ID= $response.results.external_id
+
+} 
+
+$vmexrnalid += $vmexgternalidobj
+
+# Define API endpoint and tag structure for the POST request 
+
+$vmtaguri = "$nsxServer/policy/api/v1/fabric/virtual-machines?action=add_tags" 
+
+$body = @{ 
+
+external_id = $response.results.external_id
+tags = @( 
+
+@{ 
+
+scope = $scope 
+
+tag = $vm.TagName
+
+} 
+
+) 
+
+} | ConvertTo-Json -Depth 5
+
+try { 
+
+$tagresponse = Invoke-RestMethod -Uri $vmtaguri -Method Post -Body $body -ContentType "application/json" -Headers $header
+
+#$tagresponse = Invoke-WebRequest -Uri $vmtaguri -Method Post -Body $body -ContentType "application/json" -Headers $header
+            Write-Output "Tag '$tagValue' applied to '$vmname' under scope $scope." | Green
+
+                } catch { 
+                        $streamReader1 = [System.IO.StreamReader]::new($_.Exception.Response.GetResponseStream())
+
+                                $ErrResp1 = $streamReader1.ReadToEnd() | ConvertFrom-Json
+                    #Write-Host "StatusCode:" $_.Exception.Response.StatusCode.value__
+
+#throw $_
+                    Write-Output "Failed to apply tag '$tagValue' to '$vmname' under scope $scope"| Red  } 
+
+}
+$ErrResp1
+$vmexrnalid | Export-Csv "NSX_Inventory_VM_ObjID.csv" -Encoding utf8 -NoTypeInformation
+
+

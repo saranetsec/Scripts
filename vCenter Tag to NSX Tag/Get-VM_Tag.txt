@@ -1,0 +1,95 @@
+﻿# Import PowerCLI module 
+
+Import-Module VMware.VimAutomation.Core
+
+
+
+# Disable Proxy 
+
+Set-PowerCLIConfiguration -ProxyPolicy NoProxy -confirm:$false
+
+
+
+#To accept all TLS versions, if getting SSL/TLS version mismatch error
+
+[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls,[Net.SecurityProtocolType]::Tls11,[Net.SecurityProtocolType]::Tls12
+
+
+
+# Ignore InvalidCertificate 
+
+Set-PowerCLIConfiguration -DisplayDeprecationWarnings $false -InvalidCertificateAction ignore -confirm:$false
+
+
+
+# Define vCenter connection variables 
+
+$vCenterServer = "172.20.10.94" 
+
+$Username = "administrator@vsphere.local" 
+
+$Password = "VMware1!" 
+
+
+
+# Connect to vCenter 
+
+Connect-VIServer -Server $vCenterServer -User $Username -Password $Password 
+
+
+
+# Get all tags 
+
+#$tags = Get-Tag 
+
+
+
+# Initialize an array to hold tag assignments
+
+$tagAssignment = @()
+
+$tagAssignmentobject = @()
+
+
+
+# Get all VMs 
+
+$vms = Get-VM 
+
+
+
+# Retrieve tag assignments for each VM 
+
+
+
+foreach ($vm in $vms) { 
+
+$vmTags = Get-TagAssignment -Entity $vm 
+
+foreach ($tag in $vmTags) { 
+
+#Create a custom object for each tag assignments
+
+$tagAssignmentobject = [PSCustomObject]@{
+
+VMName= $vm.Name
+
+TagName= $tag.Tag.Name
+
+Category= $tag.Tag.Category
+
+} 
+
+$tagAssignment += $tagAssignmentobject
+
+} 
+
+}
+
+
+
+$tagAssignment | Export-Csv "vCener_TagAssignment.csv" -Encoding utf8 -NoTypeInformation
+
+# Disconnect from vCenter 
+
+Disconnect-VIServer -Server $vCenterServer -Confirm:$false
